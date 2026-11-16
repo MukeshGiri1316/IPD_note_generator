@@ -36,6 +36,7 @@ enum DocumentStatus {
 
 enum NoteType {
   DISCHARGE_SUMMARY
+  DOCTOR_INITIAL_ASSESSMENT
 }
 
 // ---------------------------------------------------------------------------

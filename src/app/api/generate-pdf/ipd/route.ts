@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth";
 import { launchBrowser } from "@/lib/pdf";
 import { renderDischargeSummaryHtml } from "@/templates/discharge-summary/html-renderer";
+import { renderDoctorInitialAssessmentHtml } from "@/templates/doctor-initial-assessment/html-renderer";
 import { TemplateProps } from "@/templates/registry";
 
 export const runtime = "nodejs";
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
         admission: {
           include: { patient: true },
         },
+        template: true,
       },
     });
 
@@ -51,7 +53,13 @@ export async function POST(request: NextRequest) {
       generatedContent: (doc.finalContent as Record<string, string>) || {},
     };
 
-    const html = renderDischargeSummaryHtml(templateProps);
+    const isDoctorAssessment =
+      doc.template?.slug === "doctor-initial-assessment" ||
+      doc.noteType === "DOCTOR_INITIAL_ASSESSMENT";
+
+    const html = isDoctorAssessment
+      ? renderDoctorInitialAssessmentHtml(templateProps)
+      : renderDischargeSummaryHtml(templateProps);
 
     browser = await launchBrowser();
     const page = await browser.newPage();
@@ -77,7 +85,8 @@ export async function POST(request: NextRequest) {
     await page.close();
 
     const safePatientName = patient.name.replace(/[^a-zA-Z0-9]/g, "_");
-    const filename = `Discharge_Summary_${admission.ipdNumber}_${safePatientName}.pdf`;
+    const prefix = isDoctorAssessment ? "Doctor_Initial_Assessment" : "Discharge_Summary";
+    const filename = `${prefix}_${admission.ipdNumber}_${safePatientName}.pdf`;
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,

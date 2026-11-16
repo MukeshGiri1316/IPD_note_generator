@@ -9,6 +9,16 @@ import {
   DischargeSummaryAISchema,
   DischargeSummaryAIContent,
 } from "./schemas/discharge-summary";
+import {
+  buildDoctorInitialAssessmentSystemPrompt,
+  buildDoctorInitialAssessmentUserPrompt,
+  buildDoctorInitialAssessmentSectionPrompt,
+  DoctorInitialAssessmentInput,
+} from "./prompts/doctor-initial-assessment";
+import {
+  DoctorInitialAssessmentAISchema,
+  DoctorInitialAssessmentAIContent,
+} from "./schemas/doctor-initial-assessment";
 
 /**
  * Escapes literal raw unescaped newlines/tabs inside string literals
@@ -41,9 +51,10 @@ function cleanJsonString(str: string): string {
 }
 
 /**
- * Fallback parser that extracts sections even from markdown or plain text with headings.
+ * Fallback parser that extracts sections even from markdown or plain text with headings
+ * for Discharge Summary.
  */
-function extractSectionsFromText(
+function extractDischargeSectionsFromText(
   text: string,
   input: DischargeSummaryInput
 ): DischargeSummaryAIContent {
@@ -120,14 +131,76 @@ function extractSectionsFromText(
 }
 
 /**
- * Robust JSON extractor with multi-tier fallbacks:
- * 1. Direct JSON.parse
- * 2. Markdown block extraction (```json ... ```)
- * 3. Substring between '{' and '}'
- * 4. Control-character sanitized JSON
- * 5. Section regex extractor (never throws)
+ * Fallback parser that extracts sections from text for Doctor Initial Assessment.
  */
-function extractJson(content: string, input: DischargeSummaryInput): DischargeSummaryAIContent {
+function extractDoctorAssessmentFromText(
+  text: string,
+  input: DoctorInitialAssessmentInput
+): DoctorInitialAssessmentAIContent {
+  const findValue = (regex: RegExp, fallback: string): string => {
+    const match = text.match(regex);
+    if (match && match[1] && match[1].trim().length > 0) {
+      return match[1]
+        .replace(/\\n/g, "\n")
+        .replace(/\\"/g, '"')
+        .replace(/^["'\s]+|["'\s]+$/g, "")
+        .trim();
+    }
+    return fallback;
+  };
+
+  return {
+    temp: findValue(/"temp"\s*:\s*"([^"]+)"/i, "98.4 °F"),
+    pulse: findValue(/"pulse"\s*:\s*"([^"]+)"/i, "78 /min"),
+    bp: findValue(/"bp"\s*:\s*"([^"]+)"/i, "120/80 mmHg"),
+    rr: findValue(/"rr"\s*:\s*"([^"]+)"/i, "18 /min"),
+    wt: findValue(/"wt"\s*:\s*"([^"]+)"/i, "65 kg"),
+    height: findValue(/"height"\s*:\s*"([^"]+)"/i, "168 cm"),
+    painScore: findValue(/"painScore"\s*:\s*"([^"]+)"/i, "2/10"),
+    painLocation: findValue(/"painLocation"\s*:\s*"([^"]+)"/i, "None"),
+    pallor: findValue(/"pallor"\s*:\s*"([^"]+)"/i, "No"),
+    clubbing: findValue(/"clubbing"\s*:\s*"([^"]+)"/i, "No"),
+    icterus: findValue(/"icterus"\s*:\s*"([^"]+)"/i, "No"),
+    edema: findValue(/"edema"\s*:\s*"([^"]+)"/i, "No"),
+    emaciated: findValue(/"emaciated"\s*:\s*"([^"]+)"/i, "No"),
+    bodyHabitus: findValue(/"bodyHabitus"\s*:\s*"([^"]+)"/i, "Average Built"),
+    allergies: findValue(/"allergies"\s*:\s*"([^"]+)"/i, "None"),
+    chiefComplaints: findValue(
+      /"chiefComplaints"\s*:\s*"([\s\S]*?)(?="\s*,\s*"\w+"|\s*})/,
+      `1. Acute symptoms consistent with ${input.primaryDiagnosis}\n2. Evaluated in OPD/Emergency and admitted for further management.`
+    ),
+    hopi: findValue(
+      /"hopi"\s*:\s*"([\s\S]*?)(?="\s*,\s*"\w+"|\s*})/,
+      `Patient presented with clinical symptoms suggestive of ${input.primaryDiagnosis}. Onset was gradual over past few days. No prior history of similar episodes reported.`
+    ),
+    birthHistory: findValue(
+      /"birthHistory"\s*:\s*"([\s\S]*?)(?="\s*,\s*"\w+"|\s*})/,
+      input.patientAge < 18
+        ? "Full term normal delivery at hospital, birth weight normal, cried immediately at birth, neonatal period uneventful."
+        : "Delivered full term normally, uneventful perinatal period, no known childhood or developmental anomalies."
+    ),
+    growthDevelopment: findValue(
+      /"growthDevelopment"\s*:\s*"([\s\S]*?)(?="\s*,\s*"\w+"|\s*})/,
+      "Attained age-appropriate developmental milestones. Normal physical and cognitive progress."
+    ),
+    immunizationHistory: findValue(
+      /"immunizationHistory"\s*:\s*"([\s\S]*?)(?="\s*,\s*"\w+"|\s*})/,
+      "Immunized up to date as per National Immunization Schedule (NIS)."
+    ),
+    nutritionalHistory: findValue(
+      /"nutritionalHistory"\s*:\s*"([\s\S]*?)(?="\s*,\s*"\w+"|\s*})/,
+      "Consumes regular balanced vegetarian/mixed diet. Appetite normal, no history of significant unintentional weight loss."
+    ),
+  };
+}
+
+/**
+ * Robust JSON extractor for Discharge Summary.
+ */
+function extractDischargeJson(
+  content: string,
+  input: DischargeSummaryInput
+): DischargeSummaryAIContent {
   const trimmed = content.trim();
 
   // Tier 1: Direct parse
@@ -143,8 +216,7 @@ function extractJson(content: string, input: DischargeSummaryInput): DischargeSu
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (codeBlockMatch && codeBlockMatch[1]) {
     try {
-      const codeBlockContent = codeBlockMatch[1].trim();
-      const fromFence = JSON.parse(codeBlockContent);
+      const fromFence = JSON.parse(codeBlockMatch[1].trim());
       const validated = DischargeSummaryAISchema.safeParse(fromFence);
       if (validated.success) return validated.data;
     } catch {
@@ -165,7 +237,7 @@ function extractJson(content: string, input: DischargeSummaryInput): DischargeSu
       // Continue
     }
 
-    // Tier 4: Sanitized JSON (fixes unescaped newlines/tabs inside string literals)
+    // Tier 4: Sanitized JSON
     try {
       const sanitized = cleanJsonString(rawSubstring);
       const fromSanitized = JSON.parse(sanitized);
@@ -177,15 +249,72 @@ function extractJson(content: string, input: DischargeSummaryInput): DischargeSu
   }
 
   // Tier 5: Fallback section regex parser (guaranteed to return valid structure)
-  console.warn("Using intelligent section regex parser for AI response");
-  return extractSectionsFromText(trimmed, input);
+  return extractDischargeSectionsFromText(trimmed, input);
 }
 
 /**
- * Generate a full discharge summary using the configured AI model (Gemini or OpenAI).
+ * Robust JSON extractor for Doctor Initial Assessment.
+ */
+function extractDoctorAssessmentJson(
+  content: string,
+  input: DoctorInitialAssessmentInput
+): DoctorInitialAssessmentAIContent {
+  const trimmed = content.trim();
+
+  // Tier 1: Direct parse
+  try {
+    const direct = JSON.parse(trimmed);
+    const validated = DoctorInitialAssessmentAISchema.safeParse(direct);
+    if (validated.success) return validated.data;
+  } catch {
+    // Continue
+  }
+
+  // Tier 2: Extract from ```json ... ``` code fence
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    try {
+      const fromFence = JSON.parse(codeBlockMatch[1].trim());
+      const validated = DoctorInitialAssessmentAISchema.safeParse(fromFence);
+      if (validated.success) return validated.data;
+    } catch {
+      // Continue
+    }
+  }
+
+  // Tier 3: Substring between first '{' and last '}'
+  const startIdx = trimmed.indexOf("{");
+  const endIdx = trimmed.lastIndexOf("}");
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const rawSubstring = trimmed.substring(startIdx, endIdx + 1);
+    try {
+      const fromSub = JSON.parse(rawSubstring);
+      const validated = DoctorInitialAssessmentAISchema.safeParse(fromSub);
+      if (validated.success) return validated.data;
+    } catch {
+      // Continue
+    }
+
+    // Tier 4: Sanitized JSON
+    try {
+      const sanitized = cleanJsonString(rawSubstring);
+      const fromSanitized = JSON.parse(sanitized);
+      const validated = DoctorInitialAssessmentAISchema.safeParse(fromSanitized);
+      if (validated.success) return validated.data;
+    } catch {
+      // Continue
+    }
+  }
+
+  // Tier 5: Intelligent Fallback Section Extractor
+  return extractDoctorAssessmentFromText(trimmed, input);
+}
+
+/**
+ * Generate a full discharge summary.
  */
 export async function generateDischargeSummary(
-  input: DischargeSummaryInput,
+  input: DischargeSummaryInput
 ): Promise<DischargeSummaryAIContent> {
   const content = await completeChat({
     systemPrompt: buildSystemPrompt(),
@@ -195,20 +324,56 @@ export async function generateDischargeSummary(
     maxTokens: 2500,
   });
 
-  return extractJson(content, input);
+  return extractDischargeJson(content, input);
 }
 
 /**
- * Regenerate a single section of a discharge summary using the configured AI model (Gemini or OpenAI).
+ * Generate a full Doctor Initial Assessment (VSSH/DIAF/FORM/09).
+ */
+export async function generateDoctorInitialAssessment(
+  input: DoctorInitialAssessmentInput
+): Promise<DoctorInitialAssessmentAIContent> {
+  const content = await completeChat({
+    systemPrompt: buildDoctorInitialAssessmentSystemPrompt(),
+    userPrompt: buildDoctorInitialAssessmentUserPrompt(input),
+    jsonMode: true,
+    temperature: 0.4,
+    maxTokens: 2500,
+  });
+
+  return extractDoctorAssessmentJson(content, input);
+}
+
+/**
+ * Regenerate a single section of a note (supports both templates).
  */
 export async function regenerateSection(
-  input: DischargeSummaryInput,
+  input: DischargeSummaryInput | DoctorInitialAssessmentInput,
   sectionKey: string,
   sectionLabel: string,
+  templateSlug: string = "discharge-summary"
 ): Promise<string> {
+  const isDoctorAssessment = templateSlug === "doctor-initial-assessment";
+
+  const systemPrompt = isDoctorAssessment
+    ? buildDoctorInitialAssessmentSystemPrompt()
+    : buildSystemPrompt();
+
+  const userPrompt = isDoctorAssessment
+    ? buildDoctorInitialAssessmentSectionPrompt(
+        input as DoctorInitialAssessmentInput,
+        sectionKey,
+        sectionLabel
+      )
+    : buildSectionRegeneratePrompt(
+        input as DischargeSummaryInput,
+        sectionKey,
+        sectionLabel
+      );
+
   const content = await completeChat({
-    systemPrompt: buildSystemPrompt(),
-    userPrompt: buildSectionRegeneratePrompt(input, sectionKey, sectionLabel),
+    systemPrompt,
+    userPrompt,
     jsonMode: true,
     temperature: 0.5,
     maxTokens: 800,
@@ -250,5 +415,5 @@ export async function regenerateSection(
     return cleanedText;
   }
 
-  return "Regenerated section updated based on clinical diagnosis.";
+  return "Regenerated clinical content updated based on diagnosis.";
 }

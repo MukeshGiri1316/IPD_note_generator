@@ -97,11 +97,16 @@ export function renderDischargeSummaryHtml(props: TemplateProps): string {
     .info-table .label { font-weight: bold; white-space: nowrap; color: #000; }
     .info-table .colon { text-align: center; padding: 1.5mm 1mm; color: #000; }
 
-    /* Blue pen handwriting typography for patient placeholders */
+    /* Blue pen handwriting typography for patient placeholders with rough pen texture */
     .info-table .value {
       font-family: ${fontBase64 ? "'Kalam', " : ""}'Segoe UI', Arial, sans-serif;
-      color: #084298;
+      color: #083d8d;
       font-size: 10pt;
+      font-weight: 500;
+      letter-spacing: 0.015em;
+      text-shadow: 0.2px 0.2px 0.35px rgba(8, 61, 141, 0.4), -0.15px 0 0.2px rgba(8, 61, 141, 0.25);
+      filter: contrast(115%) brightness(97%);
+      -webkit-font-smoothing: subpixel-antialiased;
     }
 
     .section { margin-bottom: 3mm; }
@@ -115,14 +120,18 @@ export function renderDischargeSummaryHtml(props: TemplateProps): string {
       color: #000;
     }
 
-    /* Blue pen handwriting typography for generated clinical content */
+    /* Blue pen handwriting typography for generated clinical content with rough pen texture */
     .section-content {
       margin: 1mm 0 0 0;
       white-space: pre-wrap;
       font-family: ${fontBase64 ? "'Kalam', " : ""}'Segoe UI', Arial, sans-serif;
-      color: #084298;
+      color: #083d8d;
       font-size: 10.5pt;
       line-height: 1.45;
+      letter-spacing: 0.015em;
+      text-shadow: 0.2px 0.2px 0.35px rgba(8, 61, 141, 0.4), -0.15px 0 0.2px rgba(8, 61, 141, 0.25);
+      filter: contrast(115%) brightness(97%);
+      -webkit-font-smoothing: subpixel-antialiased;
     }
 
     .footer {

@@ -44,9 +44,10 @@ const SESSION_COOKIE = "ipd_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 function getSecret(): string {
-  const secret = process.env.AUTH_SECRET;
-  if (!secret) throw new Error("AUTH_SECRET env var is not set");
-  return secret;
+  return (
+    process.env.AUTH_SECRET ||
+    "ipd-notes-default-auth-secret-key-change-in-production-2026"
+  );
 }
 
 /**

@@ -13,6 +13,12 @@ interface DocumentDetail {
   createdAt: string;
   updatedAt: string;
   templateVersion: number;
+  template?: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  noteType: string;
   generatedContent: Record<string, string>;
   finalContent: Record<string, string>;
   admission: {
@@ -158,11 +164,16 @@ export default function DocumentDetailPage({ params }: PageProps) {
         throw new Error("Failed to generate PDF");
       }
 
+      const isDoctorAssessment =
+        doc.template?.slug === "doctor-initial-assessment" ||
+        doc.noteType === "DOCTOR_INITIAL_ASSESSMENT";
+      const prefix = isDoctorAssessment ? "Doctor_Initial_Assessment" : "Discharge_Summary";
+
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Discharge_Summary_${doc.admission.ipdNumber}.pdf`;
+      a.download = `${prefix}_${doc.admission.ipdNumber}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -202,6 +213,9 @@ export default function DocumentDetailPage({ params }: PageProps) {
     !isApproved &&
     (currentUser?.role === "DOCTOR" || currentUser?.role === "ADMIN");
 
+  const templateSlug = doc.template?.slug || (doc.noteType === "DOCTOR_INITIAL_ASSESSMENT" ? "doctor-initial-assessment" : "discharge-summary");
+  const docTitle = doc.template?.name || (templateSlug === "doctor-initial-assessment" ? "Doctor Initial Assessment" : "Discharge Summary");
+
   const templateProps: TemplateProps = {
     patientData: {
       name: p.name,
@@ -232,7 +246,7 @@ export default function DocumentDetailPage({ params }: PageProps) {
             </Link>
             <span>/</span>
             <span className="font-semibold text-gray-800">
-              Discharge Summary ({doc.admission.ipdNumber})
+              {docTitle} ({doc.admission.ipdNumber})
             </span>
           </div>
 
@@ -263,7 +277,7 @@ export default function DocumentDetailPage({ params }: PageProps) {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-xl font-bold text-gray-900">
-                  Discharge Summary
+                  {docTitle}
                 </h1>
                 <span
                   className={`px-2.5 py-0.5 rounded text-xs font-semibold ${
@@ -343,6 +357,7 @@ export default function DocumentDetailPage({ params }: PageProps) {
             {activeTab === "preview" && (
               <TemplatePreview
                 props={templateProps}
+                templateSlug={templateSlug}
                 onDownloadPdf={handleDownloadPdf}
                 isDownloadingPdf={isDownloadingPdf}
               />
@@ -351,6 +366,7 @@ export default function DocumentDetailPage({ params }: PageProps) {
             {activeTab === "editor" && !isApproved && (
               <NoteEditorForm
                 admissionId={doc.admission.id}
+                templateSlug={templateSlug}
                 initialContent={(doc.finalContent as Record<string, string>) || {}}
                 onChangeContent={(updated) => {
                   setDoc((prev) =>

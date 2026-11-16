@@ -6,7 +6,7 @@ import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import NoteEditorForm from "@/components/editor/NoteEditorForm";
 import TemplatePreview from "@/components/preview/TemplatePreview";
-import { TemplateProps } from "@/templates/registry";
+import { TemplateProps, TEMPLATES } from "@/templates/registry";
 
 interface AdmissionDetail {
   id: string;
@@ -28,6 +28,53 @@ interface AdmissionDetail {
   };
 }
 
+const TEMPLATE_OPTIONS = [
+  {
+    id: "discharge-summary",
+    name: "Discharge Summary (Standard Inpatient Template v1.0)",
+  },
+  {
+    id: "doctor-initial-assessment",
+    name: "Doctor Initial Assessment (VSSH/DIAF/FORM/09)",
+  },
+];
+
+function getDefaultContentForTemplate(templateSlug: string): Record<string, string> {
+  if (templateSlug === "doctor-initial-assessment") {
+    return {
+      temp: "",
+      pulse: "",
+      bp: "",
+      rr: "",
+      wt: "",
+      height: "",
+      painScore: "",
+      painLocation: "",
+      pallor: "No",
+      clubbing: "No",
+      icterus: "No",
+      edema: "No",
+      emaciated: "No",
+      bodyHabitus: "Average Built",
+      allergies: "None",
+      chiefComplaints: "",
+      hopi: "",
+      birthHistory: "",
+      growthDevelopment: "",
+      immunizationHistory: "",
+      nutritionalHistory: "",
+    };
+  }
+  return {
+    clinicalHistory: "",
+    examination: "",
+    investigationSummary: "",
+    hospitalCourse: "",
+    conditionAtDischarge: "",
+    dischargeAdvice: "",
+  };
+}
+
 function CreateDocumentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -35,6 +82,7 @@ function CreateDocumentContent() {
 
   const [admissions, setAdmissions] = useState<AdmissionDetail[]>([]);
   const [selectedAdmissionId, setSelectedAdmissionId] = useState(initialAdmissionId);
+  const [selectedTemplateSlug, setSelectedTemplateSlug] = useState<string>("discharge-summary");
   const [admission, setAdmission] = useState<AdmissionDetail | null>(null);
 
   const [activeTab, setActiveTab] = useState<"editor" | "preview">("editor");
@@ -44,16 +92,30 @@ function CreateDocumentContent() {
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
 
   // Content state for the note
-  const [aiContent, setAiContent] = useState<Record<string, string>>({
-    clinicalHistory: "",
-    examination: "",
-    investigationSummary: "",
-    hospitalCourse: "",
-    conditionAtDischarge: "",
-    dischargeAdvice: "",
-  });
+  const [aiContent, setAiContent] = useState<Record<string, string>>(() =>
+    getDefaultContentForTemplate("discharge-summary")
+  );
 
   const [hasGenerated, setHasGenerated] = useState(false);
+
+  // When template selection changes, update the content keys
+  const handleTemplateChange = (newSlug: string) => {
+    setSelectedTemplateSlug(newSlug);
+    setHasGenerated(false);
+    setSuccessBanner(null);
+    setGenerationError(null);
+    const defaults = getDefaultContentForTemplate(newSlug);
+    if (admission) {
+      if (newSlug === "discharge-summary") {
+        defaults.clinicalHistory = admission.clinicalHistory || "";
+        defaults.examination = admission.examinationFindings || "";
+      } else {
+        defaults.chiefComplaints = admission.symptoms || "";
+        defaults.hopi = admission.clinicalHistory || "";
+      }
+    }
+    setAiContent(defaults);
+  };
 
   // Load recent admissions for selection
   useEffect(() => {
@@ -85,21 +147,73 @@ function CreateDocumentContent() {
 
   // Fetch complete admission details when selected
   useEffect(() => {
-    if (selectedAdmissionId) {
-      fetch(`/api/admissions/${selectedAdmissionId}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (data?.admission) {
-            setAdmission(data.admission);
-            // Pre-fill initial clinical history / exam from admission if available
-            setAiContent((prev) => ({
-              ...prev,
-              clinicalHistory: prev.clinicalHistory || data.admission.clinicalHistory || "",
-              examination: prev.examination || data.admission.examinationFindings || "",
-            }));
-          }
-        });
+    if (!selectedAdmissionId) {
+      setAdmission(null);
+      return;
     }
+
+    // Check if we already have it in the loaded admissions list
+    const foundInList = admissions.find((a) => a.id === selectedAdmissionId);
+    if (foundInList) {
+      setAdmission(foundInList);
+    }
+
+    let isMounted = true;
+    fetch(`/api/admissions/${selectedAdmissionId}`)
+      .then(async (res) => {
+        if (res.status === 401) {
+          router.push(
+            `/login?redirect=${encodeURIComponent(
+              window.location.pathname + window.location.search
+            )}`
+          );
+          return null;
+        }
+        if (!res.ok) {
+          const errData = await res.json().catch(() => null);
+          throw new Error(
+            errData?.error || `Failed to fetch admission details (${res.status})`
+          );
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (!isMounted || !data?.admission) return;
+        setAdmission(data.admission);
+        setGenerationError(null);
+        // Pre-fill initial notes if available
+        setAiContent((prev) => ({
+          ...prev,
+          ...(selectedTemplateSlug === "discharge-summary"
+            ? {
+                clinicalHistory:
+                  prev.clinicalHistory || data.admission.clinicalHistory || "",
+                examination:
+                  prev.examination || data.admission.examinationFindings || "",
+              }
+            : {
+                chiefComplaints:
+                  prev.chiefComplaints || data.admission.symptoms || "",
+                hopi: prev.hopi || data.admission.clinicalHistory || "",
+              }),
+        }));
+      })
+      .catch((err) => {
+        if (isMounted) {
+          console.error("Error loading admission:", err);
+          if (!foundInList) {
+            setGenerationError(
+              err instanceof Error
+                ? err.message
+                : "Error loading admission details"
+            );
+          }
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [selectedAdmissionId]);
 
   // Generate full note using AI
@@ -113,7 +227,10 @@ function CreateDocumentContent() {
       const res = await fetch("/api/generate-note", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ admissionId: selectedAdmissionId }),
+        body: JSON.stringify({
+          admissionId: selectedAdmissionId,
+          templateSlug: selectedTemplateSlug,
+        }),
       });
 
       const data = await res.json();
@@ -123,8 +240,10 @@ function CreateDocumentContent() {
 
       setAiContent(data.content);
       setHasGenerated(true);
+      const templateName =
+        TEMPLATES[selectedTemplateSlug]?.name || "Clinical document";
       setSuccessBanner(
-        "✨ Discharge summary generated successfully! Review the populated sections below, edit any section, or click 'Live Preview'."
+        `✨ ${templateName} generated successfully! Review the populated sections below, edit any section, or click 'Live Preview'.`
       );
     } catch (err) {
       setGenerationError(
@@ -146,7 +265,7 @@ function CreateDocumentContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           admissionId: admission.id,
-          templateSlug: "discharge-summary",
+          templateSlug: selectedTemplateSlug,
           generatedContent: aiContent,
           finalContent: updatedContent,
           status: "DRAFT",
@@ -194,7 +313,7 @@ function CreateDocumentContent() {
               Generate IPD Clinical Note
             </h1>
             <p className="text-sm text-gray-500 mt-1">
-              Select admission → Generate AI draft → Review & Edit → Preview & Save
+              Select admission &amp; document paper → Generate AI draft → Review &amp; Edit → Preview &amp; Save
             </p>
           </div>
 
@@ -229,13 +348,18 @@ function CreateDocumentContent() {
 
             <div>
               <label className="block text-sm font-semibold text-gray-800 mb-1">
-                2. Note Template *
+                2. Select Document Paper / Template *
               </label>
               <select
-                disabled
-                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-gray-50 text-gray-700"
+                value={selectedTemplateSlug}
+                onChange={(e) => handleTemplateChange(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white font-medium text-gray-800 focus:ring-blue-500 focus:border-blue-500"
               >
-                <option>Discharge Summary (Standard Inpatient Template v1.0)</option>
+                {TEMPLATE_OPTIONS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -283,12 +407,14 @@ function CreateDocumentContent() {
                   ) : (
                     <>
                       <span>✨</span>{" "}
-                      {hasGenerated ? "Regenerate Full Note" : "Generate Draft with AI"}
+                      {hasGenerated
+                        ? `Regenerate Full ${TEMPLATES[selectedTemplateSlug]?.name || "Note"}`
+                        : `Generate ${TEMPLATES[selectedTemplateSlug]?.name || "Draft"} with AI`}
                     </>
                   )}
                 </button>
                 <span className="text-xs text-gray-500">
-                  Synthesizes patient diagnosis, symptoms, and treatment into structured clinical sections.
+                  Generates realistic clinical findings, vitals, and narrative matching the selected template.
                 </span>
               </div>
             </div>
@@ -344,8 +470,9 @@ function CreateDocumentContent() {
             <div className="p-6">
               {activeTab === "editor" ? (
                 <NoteEditorForm
-                  key={hasGenerated ? "has-gen" : "initial"}
+                  key={`${selectedTemplateSlug}-${hasGenerated ? "has-gen" : "initial"}`}
                   admissionId={admission.id}
+                  templateSlug={selectedTemplateSlug}
                   initialContent={aiContent}
                   onChangeContent={(updated) => setAiContent(updated)}
                   onSaveDraft={handleSaveDraft}
@@ -360,7 +487,7 @@ function CreateDocumentContent() {
                   <div>
                     <div className="mb-4 flex items-center justify-between">
                       <p className="text-xs text-gray-500">
-                        Rendered with the Kalam handwriting font for clinical sections and fixed hospital layout.
+                        Rendered with rough real-handwriting typography (Kalam) on pre-printed stationery.
                       </p>
                       <button
                         type="button"
@@ -371,7 +498,10 @@ function CreateDocumentContent() {
                       </button>
                     </div>
 
-                    <TemplatePreview props={templateProps} />
+                    <TemplatePreview
+                      props={templateProps}
+                      templateSlug={selectedTemplateSlug}
+                    />
 
                     <div className="mt-6 flex justify-end">
                       <button
@@ -396,7 +526,13 @@ function CreateDocumentContent() {
 
 export default function CreateDocumentPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-sm text-gray-500">Loading document generator...</div>}>
+    <Suspense
+      fallback={
+        <div className="p-8 text-center text-sm text-gray-500">
+          Loading document generator...
+        </div>
+      }
+    >
       <CreateDocumentContent />
     </Suspense>
   );

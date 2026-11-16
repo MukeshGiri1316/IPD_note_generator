@@ -5,14 +5,47 @@ import { requireSession } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import { AdmissionStatus, Prisma } from "@prisma/client";
 
-interface RouteParams {
-  params: Promise<{ admissionId: string }>;
+async function resolveAdmissionId(
+  request: NextRequest,
+  context?: { params?: Promise<{ admissionId: string }> | { admissionId: string } }
+): Promise<string> {
+  if (context?.params) {
+    try {
+      const resolved = await context.params;
+      if (resolved && typeof resolved === "object" && "admissionId" in resolved) {
+        if (resolved.admissionId) return resolved.admissionId;
+      }
+    } catch {
+      // Fall through to URL extraction
+    }
+  }
+
+  // Extract from URL path: /api/admissions/[admissionId]
+  const segments = request.nextUrl.pathname.split("/").filter(Boolean);
+  const last = segments[segments.length - 1];
+  if (last && last !== "admissions") {
+    return last;
+  }
+
+  return "";
 }
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(
+  request: NextRequest,
+  context?: { params?: Promise<{ admissionId: string }> | { admissionId: string } }
+) {
   try {
-    await requireSession();
-    const { admissionId } = await params;
+    try {
+      await requireSession();
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const admissionId = await resolveAdmissionId(request, context);
+
+    if (!admissionId) {
+      return NextResponse.json({ error: "admissionId is required" }, { status: 400 });
+    }
 
     const admission = await prisma.admission.findUnique({
       where: { id: admissionId },
@@ -41,18 +74,31 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ admission });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     console.error("GET /api/admissions/[admissionId] error:", error);
-    return NextResponse.json({ error: "Failed to fetch admission" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to fetch admission" },
+      { status: 500 }
+    );
   }
 }
 
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export async function PUT(
+  request: NextRequest,
+  context?: { params?: Promise<{ admissionId: string }> | { admissionId: string } }
+) {
   try {
-    const session = await requireSession();
-    const { admissionId } = await params;
+    let session;
+    try {
+      session = await requireSession();
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const admissionId = await resolveAdmissionId(request, context);
+    if (!admissionId) {
+      return NextResponse.json({ error: "admissionId is required" }, { status: 400 });
+    }
+
     const body = await request.json();
 
     const parsed = AdmissionUpdateSchema.safeParse(body);
@@ -104,10 +150,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ success: true, admission: updated });
   } catch (error) {
-    if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     console.error("PUT /api/admissions/[admissionId] error:", error);
-    return NextResponse.json({ error: "Failed to update admission" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to update admission" },
+      { status: 500 }
+    );
   }
 }

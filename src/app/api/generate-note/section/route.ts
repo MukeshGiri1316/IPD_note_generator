@@ -4,12 +4,13 @@ import { requireSession } from "@/lib/auth";
 import { createAuditLog } from "@/lib/audit";
 import { regenerateSection } from "@/lib/ai/generate-note";
 import { DischargeSummaryInput } from "@/lib/ai/prompts/discharge-summary";
+import { DoctorInitialAssessmentInput } from "@/lib/ai/prompts/doctor-initial-assessment";
 
 export async function POST(request: NextRequest) {
   try {
     const session = await requireSession();
     const body = await request.json();
-    const { admissionId, sectionKey, sectionLabel } = body;
+    const { admissionId, sectionKey, sectionLabel, templateSlug = "discharge-summary" } = body;
 
     if (!admissionId || !sectionKey || !sectionLabel) {
       return NextResponse.json(
@@ -27,28 +28,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Admission not found" }, { status: 404 });
     }
 
-    const aiInput: DischargeSummaryInput = {
-      patientAge: admission.patient.age,
-      patientGender: admission.patient.gender,
-      primaryDiagnosis: admission.primaryDiagnosis,
-      secondaryDiagnosis: admission.secondaryDiagnosis || undefined,
-      symptoms: admission.symptoms || undefined,
-      clinicalHistory: admission.clinicalHistory || undefined,
-      examinationFindings: admission.examinationFindings || undefined,
-      investigationDetails: (admission.investigationDetails as Record<string, unknown>) || undefined,
-      treatmentDetails: admission.treatmentDetails || undefined,
-      admissionDate: admission.admissionDate.toISOString().split("T")[0],
-      dischargeDate: admission.dischargeDate ? admission.dischargeDate.toISOString().split("T")[0] : undefined,
-    };
+    const isDoctorAssessment = templateSlug === "doctor-initial-assessment";
 
-    const content = await regenerateSection(aiInput, sectionKey, sectionLabel);
+    const aiInput: DischargeSummaryInput | DoctorInitialAssessmentInput = isDoctorAssessment
+      ? {
+          patientAge: admission.patient.age,
+          patientGender: admission.patient.gender,
+          primaryDiagnosis: admission.primaryDiagnosis,
+          secondaryDiagnosis: admission.secondaryDiagnosis || undefined,
+          symptoms: admission.symptoms || undefined,
+          clinicalHistory: admission.clinicalHistory || undefined,
+          examinationFindings: admission.examinationFindings || undefined,
+          investigationDetails: (admission.investigationDetails as Record<string, unknown>) || undefined,
+          treatmentDetails: admission.treatmentDetails || undefined,
+          admissionDate: admission.admissionDate.toISOString().split("T")[0],
+        }
+      : {
+          patientAge: admission.patient.age,
+          patientGender: admission.patient.gender,
+          primaryDiagnosis: admission.primaryDiagnosis,
+          secondaryDiagnosis: admission.secondaryDiagnosis || undefined,
+          symptoms: admission.symptoms || undefined,
+          clinicalHistory: admission.clinicalHistory || undefined,
+          examinationFindings: admission.examinationFindings || undefined,
+          investigationDetails: (admission.investigationDetails as Record<string, unknown>) || undefined,
+          treatmentDetails: admission.treatmentDetails || undefined,
+          admissionDate: admission.admissionDate.toISOString().split("T")[0],
+          dischargeDate: admission.dischargeDate ? admission.dischargeDate.toISOString().split("T")[0] : undefined,
+        };
+
+    const content = await regenerateSection(aiInput, sectionKey, sectionLabel, templateSlug);
 
     await createAuditLog({
       userId: session.userId,
       action: "AI_SECTION_REGENERATED",
       entityType: "Admission",
       entityId: admissionId,
-      metadata: { sectionKey },
+      metadata: { sectionKey, templateSlug },
     });
 
     return NextResponse.json({

@@ -186,14 +186,18 @@ const colonStyle: React.CSSProperties = {
   color: "#000",
 };
 
-// Hand-written blue pen ink style for patient details
+// Hand-written blue pen ink style for patient details with rough authentic pen feel
 const valueCellStyle: React.CSSProperties = {
   padding: "1.5mm 2mm",
   borderBottom: "1px solid #ccc",
   fontFamily: "'Kalam', 'Segoe UI', Arial, sans-serif",
-  color: "#084298", // Medical blue pen ink
+  color: "#083d8d", // Medical blue pen ink
   fontSize: "10pt",
   fontWeight: "500",
+  letterSpacing: "0.015em",
+  textShadow: "0.2px 0.2px 0.35px rgba(8, 61, 141, 0.4), -0.15px 0 0.2px rgba(8, 61, 141, 0.25)",
+  filter: "contrast(115%) brightness(97%)",
+  WebkitFontSmoothing: "subpixel-antialiased",
 };
 
 const sectionStyle: React.CSSProperties = {
@@ -211,14 +215,18 @@ const sectionTitleStyle: React.CSSProperties = {
   color: "#000",
 };
 
-// Hand-written blue pen ink style for clinical entries
+// Hand-written blue pen ink style for clinical entries with rough authentic pen feel
 const sectionContentStyle: React.CSSProperties = {
   margin: "1mm 0 0 0",
   whiteSpace: "pre-wrap",
   fontFamily: "'Kalam', 'Segoe UI', Arial, sans-serif",
-  color: "#084298", // Medical blue pen ink
+  color: "#083d8d", // Medical blue pen ink
   fontSize: "10.5pt",
   lineHeight: "1.45",
+  letterSpacing: "0.015em",
+  textShadow: "0.2px 0.2px 0.35px rgba(8, 61, 141, 0.4), -0.15px 0 0.2px rgba(8, 61, 141, 0.25)",
+  filter: "contrast(115%) brightness(97%)",
+  WebkitFontSmoothing: "subpixel-antialiased",
 };
 
 const footerStyle: React.CSSProperties = {

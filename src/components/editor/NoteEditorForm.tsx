@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import SectionEditor from "./SectionEditor";
-import { SECTION_LABELS } from "@/templates/registry";
+import { SECTION_LABELS, TEMPLATE_SECTIONS } from "@/templates/registry";
 
 interface NoteEditorFormProps {
   admissionId: string;
+  templateSlug?: string;
   initialContent: Record<string, string>;
   onSaveDraft: (content: Record<string, string>) => Promise<void>;
   onPreview: (content: Record<string, string>) => void;
@@ -15,6 +16,7 @@ interface NoteEditorFormProps {
 
 export default function NoteEditorForm({
   admissionId,
+  templateSlug = "discharge-summary",
   initialContent,
   onSaveDraft,
   onPreview,
@@ -53,6 +55,7 @@ export default function NoteEditorForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           admissionId,
+          templateSlug,
           sectionKey,
           sectionLabel: label,
         }),
@@ -89,14 +92,26 @@ export default function NoteEditorForm({
     }
   };
 
-  const sectionKeys = [
-    "clinicalHistory",
-    "examination",
-    "investigationSummary",
-    "hospitalCourse",
-    "conditionAtDischarge",
-    "dischargeAdvice",
-  ];
+  const sectionKeys =
+    TEMPLATE_SECTIONS[templateSlug] || TEMPLATE_SECTIONS["discharge-summary"];
+
+  const shortFields = new Set([
+    "temp",
+    "pulse",
+    "bp",
+    "rr",
+    "wt",
+    "height",
+    "painScore",
+    "painLocation",
+    "pallor",
+    "clubbing",
+    "icterus",
+    "edema",
+    "emaciated",
+    "bodyHabitus",
+    "allergies",
+  ]);
 
   return (
     <div className="space-y-4">
@@ -113,19 +128,23 @@ export default function NoteEditorForm({
       )}
 
       <div className="space-y-4">
-        {sectionKeys.map((key) => (
-          <SectionEditor
-            key={key}
-            sectionKey={key}
-            label={SECTION_LABELS[key] || key}
-            value={content[key] || ""}
-            onChange={(val) => handleFieldChange(key, val)}
-            onRegenerate={() =>
-              handleRegenerateSection(key, SECTION_LABELS[key] || key)
-            }
-            isRegenerating={regeneratingKey === key}
-          />
-        ))}
+        {sectionKeys.map((key) => {
+          const isShort = shortFields.has(key);
+          return (
+            <SectionEditor
+              key={key}
+              sectionKey={key}
+              label={SECTION_LABELS[key] || key}
+              value={content[key] || ""}
+              rows={isShort ? 1 : 4}
+              onChange={(val) => handleFieldChange(key, val)}
+              onRegenerate={() =>
+                handleRegenerateSection(key, SECTION_LABELS[key] || key)
+              }
+              isRegenerating={regeneratingKey === key}
+            />
+          );
+        })}
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-gray-200">

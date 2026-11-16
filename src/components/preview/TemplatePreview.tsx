@@ -2,20 +2,25 @@
 
 import React from "react";
 import DischargeSummaryTemplate from "@/templates/discharge-summary/template";
+import DoctorInitialAssessmentTemplate from "@/templates/doctor-initial-assessment/template";
 import { TemplateProps } from "@/templates/registry";
 import "@/styles/fonts.css";
 
 interface TemplatePreviewProps {
   props: TemplateProps;
+  templateSlug?: string;
   onDownloadPdf?: () => void;
   isDownloadingPdf?: boolean;
 }
 
 export default function TemplatePreview({
   props,
+  templateSlug = "discharge-summary",
   onDownloadPdf,
   isDownloadingPdf,
 }: TemplatePreviewProps) {
+  const isDoctorAssessment = templateSlug === "doctor-initial-assessment";
+
   return (
     <div className="flex flex-col items-center">
       {onDownloadPdf && (
@@ -33,10 +38,17 @@ export default function TemplatePreview({
       {/* A4 Container Preview */}
       <div className="border border-gray-300 shadow-md bg-white overflow-auto max-h-[85vh] w-full max-w-[215mm] p-2 rounded">
         <div className="mx-auto" style={{ width: "210mm" }}>
-          <DischargeSummaryTemplate
-            patientData={props.patientData}
-            generatedContent={props.generatedContent}
-          />
+          {isDoctorAssessment ? (
+            <DoctorInitialAssessmentTemplate
+              patientData={props.patientData}
+              generatedContent={props.generatedContent}
+            />
+          ) : (
+            <DischargeSummaryTemplate
+              patientData={props.patientData}
+              generatedContent={props.generatedContent}
+            />
+          )}
         </div>
       </div>
     </div>
